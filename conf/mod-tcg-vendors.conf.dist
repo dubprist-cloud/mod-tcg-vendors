@@ -205,8 +205,15 @@ TCGVendors.BossDrop.ItemIds =
 ###############################################################################
 #  TCGVendors.BossDrop.MailParticipants
 #
-#    Controls whether group/raid participants receive a unique stationery item
-#    via in-game mail, and whether the loot-window drop on the corpse is active.
+#    Controls whether a unique stationery item is mailed to a randomly chosen
+#    participant of the boss kill, and whether the loot-window drop on the corpse
+#    is active.
+#
+#    Exactly ONE participant is mailed per kill.  Candidates are the members of
+#    the killer's group/raid who are on the same map instance; the killer is
+#    always eligible.  Solo players (no group) receive mail to themselves.
+#
+#    NOTE: the option name is historical. It used to mail every member.
 #
 #    0 - Disabled  (default)
 #        No mail is sent.  A single stationery item appears on the boss corpse
@@ -215,16 +222,16 @@ TCGVendors.BossDrop.ItemIds =
 #        startup for all entries in BossDrop.CreatureIds.
 #
 #    1 - Mail only
-#        Every qualifying group/raid member present on the same map receives
-#        a stationery item in their mailbox, each containing a unique code.
-#        No loot template rows are inserted — the stationery does NOT appear
-#        on the boss corpse.  Existing 9311 rows are purged on startup.
-#        Solo players (no group) receive mail to themselves.
+#        One randomly chosen participant receives a stationery item in their
+#        mailbox containing a unique code.  No loot template rows are inserted —
+#        the stationery does NOT appear on the boss corpse.  Existing 9311 rows
+#        are purged on startup.
 #
 #    2 - Mail AND loot
-#        Every qualifying participant receives a mailed stationery with their
-#        own unique code, AND a single stationery item appears on the boss
-#        corpse as a loot-window drop.  Both paths are active simultaneously.
+#        One randomly chosen participant receives a mailed stationery with their
+#        own unique code, AND a single stationery item appears on the boss corpse
+#        as a loot-window drop.  Both paths are active simultaneously, so up to
+#        two codes can be issued per kill.
 #
 #    Default: 0
 #

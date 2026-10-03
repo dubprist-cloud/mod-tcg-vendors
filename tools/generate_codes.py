@@ -34,9 +34,11 @@ APPLYING CODES
 
 import argparse
 import curses
+import re
 import secrets
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 # ============================================================
 #  Unambiguous charset — must match IsValidCodeFormat() in
@@ -152,7 +154,7 @@ EXPANSIONS = [
         ("PROMO_PANDAREN_MONK",     "Pandaren Monk"),
     ]),
     ("Worldwide Invitational", [
-        ("PROMO_TYRAELS_HILT",      "Tyrael's Hilt"),
+        ("WWI_TYRAELS_HILT",        "Tyrael's Hilt"),
     ]),
     ("Special Events & Tournaments", [
         ("PROMO_LIL_PHYLACTERY",    "Lil' Phylactery"),
@@ -164,6 +166,133 @@ EXPANSIONS = [
 
 REWARD_GROUPS = {k: v for _, items in EXPANSIONS for k, v in items}
 ALL_KEYS      = [k   for _, items in EXPANSIONS for k, _ in items]
+
+
+# ============================================================
+#  Consistency check against REWARD_GROUPS in mod_tcg_vendors.cpp
+# ============================================================
+
+CPP_SOURCE = Path(__file__).resolve().parent.parent / "src" / "mod_tcg_vendors.cpp"
+
+# Reward groups with a rewardGroupKey in a vendor catalog but deliberately
+# absent from REWARD_GROUPS: War Fuel is spell-gated and never code-redeemable.
+CATALOG_KEYS_WITHOUT_GROUP = frozenset({"PROMO_RED_WAR_FUEL", "PROMO_BLUE_WAR_FUEL"})
+
+_REWARD_GROUPS_BLOCK_RE = re.compile(r"REWARD_GROUPS\s*=\s*\{(.*?)\n\};", re.S)
+# A reward-group key is a brace, an UPPERCASE token, then the display name.
+# The trailing `, { "` is what separates a key from a display name, since
+# display names are quoted too: { "TCG_TABARD_OF_FLAME", { "Tabard of Flame",
+_GROUP_KEY_RE = re.compile(r'\{\s*"([A-Z][A-Z0-9_]*)",\s*\{\s*"')
+# Any group key referenced from a vendor catalog (the 5th TCGItem field).
+_CATALOG_KEY_RE = re.compile(r'"((?:TCG|BLIZZCON|PROMO|WWI)_[A-Z0-9_]+)"')
+
+
+def _read_cpp(path):
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _strip_cpp_comments(text):
+    """Blank out C++ comments, preserving string and character literals.
+
+    The catalog-key scan below runs over raw source, so a group key merely
+    *mentioned* in a comment would otherwise be reported as a dangling
+    reference.  Comment bodies are replaced with spaces rather than removed so
+    that offsets -- and therefore the REWARD_GROUPS block match -- stay valid.
+    """
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+
+        if ch == '"' or ch == "'":
+            # Copy the literal verbatim, honouring backslash escapes.
+            quote = ch
+            out.append(ch)
+            i += 1
+            while i < n:
+                out.append(text[i])
+                if text[i] == "\\" and i + 1 < n:
+                    out.append(text[i + 1])
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+
+        if text.startswith("//", i):
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+
+        if text.startswith("/*", i):
+            while i < n and not text.startswith("*/", i):
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            out.append("  ")
+            i += 2
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
+
+
+def verify_groups_in_sync():
+    """Abort if EXPANSIONS has drifted from REWARD_GROUPS in the C++ source.
+
+    A key that exists in only one of the two produces SQL that the server
+    rejects at redemption time ("unknown reward"), so it must not be
+    silently generated.  If the C++ source cannot be read the check is
+    skipped -- the tool is standalone and may be copied out of the module.
+    """
+    source = _read_cpp(CPP_SOURCE)
+    if source is None:
+        sys.stderr.write(
+            "WARNING: cannot read {} -- skipping reward group sync check.\n"
+            .format(CPP_SOURCE))
+        return
+
+    # Comments are blanked first: a group key quoted in a comment is not a
+    # reference, and must not be reported as one.
+    source = _strip_cpp_comments(source)
+
+    block = _REWARD_GROUPS_BLOCK_RE.search(source)
+    if block is None:
+        sys.stderr.write(
+            "WARNING: REWARD_GROUPS block not found in {} -- skipping sync check.\n"
+            .format(CPP_SOURCE))
+        return
+
+    cpp_keys = set(_GROUP_KEY_RE.findall(block.group(1)))
+    py_keys  = set(ALL_KEYS)
+
+    only_cpp = sorted(cpp_keys - py_keys)
+    only_py  = sorted(py_keys - cpp_keys)
+
+    # Second check: every catalog rewardGroupKey must resolve to a real group.
+    outside = source[:block.start()] + source[block.end():]
+    catalog_keys = set(_CATALOG_KEY_RE.findall(outside))
+    dangling = sorted(catalog_keys - cpp_keys - CATALOG_KEYS_WITHOUT_GROUP)
+
+    if not only_cpp and not only_py and not dangling:
+        return
+
+    lines = ["ERROR: reward groups are out of sync with REWARD_GROUPS in {}".format(CPP_SOURCE)]
+    if only_cpp:
+        lines.append("  only in C++ (rename in generate_codes.py):  {}".format(", ".join(only_cpp)))
+    if only_py:
+        lines.append("  only in generate_codes.py (add/rename in C++):  {}".format(", ".join(only_py)))
+    if dangling:
+        lines.append("  catalog rewardGroupKey with no REWARD_GROUPS entry:  {}".format(", ".join(dangling)))
+    lines.append("  Fix the group key so C++ and this tool agree, then re-run.")
+    sys.exit("\n".join(lines))
 
 
 # ============================================================
@@ -874,6 +1003,8 @@ def cli_generate(args):
 
 
 def main():
+    verify_groups_in_sync()
+
     if len(sys.argv) == 1:
         launch_dashboard()
         return

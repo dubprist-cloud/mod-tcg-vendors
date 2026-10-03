@@ -2,19 +2,30 @@
 -- Apply to: world database
 --
 -- What this script does:
---   1. Creates npc_text entries for the greeting dialog of each NPC type.
---   2. Sets the ScriptName on the three NPC creature_template rows so the
+--   1. Creates npc_text entries (90001-90004) for the greeting dialog of each NPC type.
+--   2. Sets ScriptName on the creature_template rows of all seven NPC entries so the
 --      server loads our C++ gossip handlers.
---   3. Ensures all three NPCs have the UNIT_NPC_FLAG_GOSSIP flag (bit 1)
---      so right-clicking them opens a gossip dialog.
+--   3. Ensures all seven NPCs have the UNIT_NPC_FLAG_GOSSIP flag (bit 1) so
+--      right-clicking them opens a gossip dialog.
+--   4. Places the Alliance-side companion vendors in The Forlorn Cavern.
 --
--- IMPORTANT: Run this AFTER applying the characters DB SQL.
--- IMPORTANT: Verify that npc_text IDs 90001 and 90002 are not already in
---            use on your server before applying. If they are, change the
---            IDs here AND in the TCGNpcTextIds enum in mod_tcg_vendors.cpp.
+-- It does NOT spawn Edward Cairn (29095) or Ian Drake (29093): both already exist
+-- in the stock AzerothCore world database, in the Undercity and Stormwind, and are
+-- left exactly where they are.  Only their ScriptName and gossip flag are touched.
+--
+-- WARNING: steps 4 uses an unconditional "DELETE FROM creature WHERE id1 = <entry>"
+-- for entries 16070, 16069 and 15186 before re-inserting them.  Any spawn you added
+-- for those three entries yourself, including ones placed in-game, is removed every
+-- time this file is applied.  Re-add them afterwards, or comment the DELETE out.
+--
+-- IMPORTANT: Verify that npc_text IDs 90001-90004 are not already in use on your
+--            server before applying. If they are, change the IDs here AND in the
+--            TCGNpcTextIds enum in mod_tcg_vendors.cpp.
 
 -- ============================================================
 --  Place Garel and Gurky in The Forlorn Cavern, and rotate Murky to Match Ransin
+--
+--  Each block below deletes every existing spawn of that entry first.
 -- ============================================================
 
 -- Garel Redrock
